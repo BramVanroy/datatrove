@@ -366,4 +366,7 @@ def launch_slurm_job(launch_file_contents, *args):
     with tempfile.NamedTemporaryFile("w") as f:
         f.write(launch_file_contents)
         f.flush()
-        return subprocess.check_output(["sbatch", *args, f.name]).decode("utf-8").split()[-1]
+        job_id = subprocess.check_output(["sbatch", *args, f.name]).decode("utf-8")
+        
+        # Specific to VSC Hortense CPU nodes
+        return re.search(r"Submitted batch job (\d+)", job_id).group(1)
