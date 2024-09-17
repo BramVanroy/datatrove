@@ -2,6 +2,7 @@ import dataclasses
 import json
 import os
 import random
+import socket
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -80,6 +81,13 @@ class PipelineExecutor(ABC):
             return PipelineStats()
         logfile = add_task_logger(self.logging_dir, rank, local_rank)
         log_pipeline(self.pipeline)
+
+        # Print node name
+        try:
+            print(socket.gethostname())
+        except Exception:
+            pass
+
         print(f"Rank: {rank} , Local rank: {local_rank}")
         print(f"Number of CPU cores: {os.cpu_count()}")
         print(f"Available memory: {os.popen('free -h').read()}")
