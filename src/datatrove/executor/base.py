@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import os
 import random
 import time
 from abc import ABC, abstractmethod
@@ -79,6 +80,10 @@ class PipelineExecutor(ABC):
             return PipelineStats()
         logfile = add_task_logger(self.logging_dir, rank, local_rank)
         log_pipeline(self.pipeline)
+        print(f"Rank: {rank} , Local rank: {local_rank}")
+        print(f"Number of CPU cores: {os.cpu_count()}")
+        print(f"Available memory: {os.popen('free -h').read()}")
+
 
         if self.randomize_start_duration > 0:
             time.sleep(random.randint(0, self.randomize_start_duration))
