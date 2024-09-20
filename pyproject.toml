@@ -31,7 +31,7 @@ dependencies = [
     "numpy>=1.25.0,<2.0.0",
     "tqdm",
     "lxml_html_clean",
-    "lxml[html_clean]",
+    "lxml==5.1.1",  # For the older lxml.html.clean
 ]
 
 [project.optional-dependencies]
