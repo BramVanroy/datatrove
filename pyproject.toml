@@ -87,7 +87,13 @@ inference = [
   "aiofiles",
   "httpx",
   "aiosqlite",
-  "vllm>=0.10.0",
+  "mistral-common>=1.11.2,<2",
+  "vllm==0.24.0",
+  # Default installs 5.8.x, which has issues with gemma4
+  "transformers==5.11.0",
+  "flashinfer-python==0.6.12",
+  "flashinfer-cubin==0.6.12",
+  "flashinfer-jit-cache==0.6.12",
   "sglang",
   "bitsandbytes",
   "numpy>=2.0.0,<2.3", # numba requires numpy<=2.2
@@ -125,6 +131,14 @@ all = [
 dev = [
   "datatrove[all]",
 ]
+
+[[tool.uv.index]]
+name = "flashinfer-jit-cache-cu130"
+url = "https://flashinfer.ai/whl/cu130/"
+explicit = true
+
+[tool.uv.sources]
+flashinfer-jit-cache = { index = "flashinfer-jit-cache-cu130" }
 
 [project.urls]
 Repository = "https://github.com/huggingface/datatrove"
