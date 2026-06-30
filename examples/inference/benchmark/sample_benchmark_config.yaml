@@ -24,6 +24,10 @@ continue_on_failure: true
 
 # Fixed arguments applied to all runs
 fixed_args:
+  # Uncomment to run jobs inside an Apptainer container instead of a virtual environment.
+  # See examples/inference/README.md § "Container usage" for details.
+  # container-sif: "/path/to/your_env.sif"
+
   benchmark-mode: true
   qos: "high"
   time: "1:59:00" # Fairly low because we are only interested in the best configurations, so we just let bad ones time out

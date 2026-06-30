@@ -1,0 +1,7 @@
+#!/bin/bash
+# Wrapper that runs launch_pickled_pipeline inside an Apptainer container.
+# APPTAINER_SIF must be set to the path of the container image (.sif file).
+# We invoke the entrypoint via `python -c` rather than by name to avoid PATH
+# being inherited by the container and resolving back to this wrapper script.
+exec apptainer exec --nv "$APPTAINER_SIF" \
+    python -c "from datatrove.tools.launch_pickled_pipeline import main; main()" "$@"
