@@ -186,7 +186,7 @@ def main(
     benchmark_mode: bool = False,  # Skip output writing for benchmarking
     # slurm settings
     name: str = "synth",
-    time: str = "12:00:00",
+    time: str = "1-00:00:00",
     qos: str = "low",
     reservation: str | None = None,
 ) -> None:
@@ -446,9 +446,13 @@ def main(
         # Isolate Xet cache per Slurm process to avoid cache contention across parallel jobs.
         slurm_env_command = (
             f"source .venv/bin/activate && export PYTHONPATH={EXAMPLES_INFERENCE_DIR}:$PYTHONPATH"
-            ' && export HF_XET_CACHE="/tmp/hf_xet/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${SLURM_PROCID}"'
+            ' && export HF_XET_CACHE="${HOME}/.cache/hf_xet/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${SLURM_PROCID}"'
             ' && mkdir -p "$HF_XET_CACHE"'
         )
+
+        sbatch_args = {
+            "account": "tnsr72764",
+        }
 
         inference_executor = SlurmPipelineExecutor(
             pipeline=inference_pipeline,
@@ -456,7 +460,7 @@ def main(
             tasks=tasks,
             workers=workers,
             time=time,
-            partition="hopper-prod",
+            partition="gpu_h100",
             max_array_launch_parallel=True,
             qos=qos,
             job_name=f"{name}_inference",
@@ -466,9 +470,7 @@ def main(
             gpus_per_task=gpus_per_node,
             nodes_per_task=nodes_per_task,
             srun_args={"cpu-bind": "none"},
-            sbatch_args={
-                **({"reservation": reservation} if reservation else {}),
-            },
+            sbatch_args={**{"requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
             env_command=slurm_env_command,
         )
         inference_executor.run()
@@ -492,12 +494,12 @@ def main(
                 logging_dir=str(monitor_logs_path),
                 tasks=1,
                 workers=1,
-                time="7-00:00:00",  # Long enough to outlast inference
-                partition="hopper-cpu",
+                time="3-00:00:00",  # Long enough to outlast inference
+                partition="genoa",
                 qos=qos,
                 job_name=f"{name}_monitor",
                 cpus_per_task=1,
-                sbatch_args={"mem-per-cpu": "4G", "requeue": ""},  # Requeue to handle long running jobs
+                sbatch_args={**{"mem-per-cpu": "4G", "requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
                 env_command=slurm_env_command,
             )
 
@@ -510,13 +512,13 @@ def main(
                 tasks=1,
                 workers=1,
                 time="0:10:00",
-                partition="hopper-cpu",
+                partition="genoa",
                 qos=qos,
                 job_name=f"{name}_datacard",
                 cpus_per_task=1,
                 depends=inference_executor,
                 run_on_dependency_fail=False,  # use afterok
-                sbatch_args={"mem-per-cpu": "4G"},
+                sbatch_args={**{"mem-per-cpu": "4G"}, **sbatch_args},
                 env_command=slurm_env_command,
             )
             datacard_executor.run()

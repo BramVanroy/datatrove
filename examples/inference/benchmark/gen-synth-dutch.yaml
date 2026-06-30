@@ -1,0 +1,95 @@
+# Comprehensive vLLM throughput benchmark configuration
+#
+# TIERED APPROACH: Run tiers sequentially, use winners from each tier to inform the next.
+#
+# Tiers:
+#   0. Parallelism and Batching (tp, mns, mnbt) - Find optimal parallelism and batch sizes.
+#   1. SpecDec and GMU (speculative-config, gmu) - Lossless speedup and memory utilization.
+#
+# Model size categories:
+#   - Tiny:     <1B params
+#   - Small:    1B-10B params
+#   - Medium:   10B-100B params
+#   - Large:    100B-500B params
+#   - Enormous: >500B params (leaving out for now, potential models to test are: GLM-4.7, DeepSeek-V3.1, Kimi-K2-Instruct)
+#
+# Launch with:
+#   python examples/inference/benchmark/launch_experiments.py --config examples/inference/benchmark/sample_benchmark_config.yaml
+#
+# Dry run (no submission):
+#   python examples/inference/benchmark/launch_experiments.py --config examples/inference/benchmark/sample_benchmark_config.yaml --dry-run
+
+script: "examples/inference/generate_data.py"
+continue_on_failure: true
+
+# Fixed arguments applied to all runs
+fixed_args:
+  benchmark-mode: true
+  qos: "high"
+  time: "1:59:00" # Fairly low because we are only interested in the best configurations, so we just let bad ones time out
+
+  model-max-context: 8192 # So we can also test SmolLM2
+  max-tokens: 4096
+
+  input-dataset-name: "epfml/FineWeb2-HQ"
+  input-dataset-config: "nld_Latn"
+  input-dataset-split: "train"
+  prompt-column: "text"
+  prompt-template: ["tutorial", "Herschrijf het document tot een duidelijke, stapsgewijze handleiding of instructiegids. Gebruik waar nodig genummerde stappen of opsommingstekens om de duidelijkheid te vergroten. Behoud alle essentiële informatie en zorg ervoor dat de stijl leerzaam en gemakkelijk te volgen is. Lever alleen de handleiding aan, verder niets..\n\nDocument: [[DOCUMENT]]"]
+  max-examples: 10000 # To make sure we have at least 2.5x the max-num-seqs
+
+  output-dataset-name: "fineweb-nl-benchmark"
+  output-dir: "/home/bvanroy/jobs/throughput-bench//results"
+  
+  # Make benchmark reproducible
+  seed: 42
+  temperature: 0.0
+
+  # Ensure pipeline is not bottlenecked by concurrency limits
+  max-concurrent-generations: 5000
+  max-concurrent-documents: 5000
+
+  workers: 1
+  tasks: 1
+  trust-remote-code: true
+
+# =============================================================================
+# TIER 0: PARALLELISM AND BATCHING (tp, mns, mnbt)
+# =============================================================================
+# Goal: Find optimal parallelism and batch size configuration.
+# This is the HIGHEST IMPACT lever - how many sequences can we push through?
+#
+# tp: Tensor parallelism - split model across GPUs
+# max-num-seqs: How many sequences can be batched together
+# max-num-batched-tokens: Total tokens per forward pass (prefill + decode)
+# =============================================================================
+experiments:
+  # --- SMALL (1B-10B) - Should fit on 1-2 GPUs ---
+  - name: "tier0-small"
+    args:
+      model-name-or-path:
+        - "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+        - "google/gemma-4-E2B-it-qat-w4a16-ct"
+        - "google/gemma-4-E4B-it-qat-w4a16-ct"
+        - "ibm-granite/granite-4.1-3b-fp8"
+        - "ibm-granite/granite-4.1-8b-fp8"
+        - "Qwen/Qwen3.5-2B"
+        - "Qwen/Qwen3.5-4B"
+        - "Qwen/Qwen3.5-9B"
+        - "utter-project/EuroLLM-9B-Instruct-2512"
+        - "mistralai/Ministral-3-3B-Instruct-2512"
+        - "mistralai/Ministral-3-8B-Instruct-2512"
+      tp: [1, 2]
+      max-num-seqs: [256, 512, 1024, 2048, 4096]
+      max-num-batched-tokens: [8192, 16384, 32768]
+
+  # --- MEDIUM (10B-100B) - Likely needs multiple GPUs ---
+  - name: "tier0-medium"
+    args:
+      model-name-or-path:
+        - "google/gemma-4-12B-it-qat-w4a16-ct"
+        - "Qwen/Qwen3.6-35B-A3B-FP8"
+        - "mistralai/Ministral-3-14B-Instruct-2512"
+      tp: [1, 2, 4]
+      max-num-seqs: [256, 512, 1024, 2048, 4096]
+      max-num-batched-tokens: [8192, 16384, 32768]
