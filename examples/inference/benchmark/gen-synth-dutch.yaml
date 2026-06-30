@@ -24,7 +24,7 @@ continue_on_failure: true
 
 # Fixed arguments applied to all runs
 fixed_args:
-  container-sif: "/home/bvanroy/jobs/datatrove-venv.sif"
+  container-sif: "/projects/prjs0986/embedding/synth-data/datatrove-venv.sif"
   benchmark-mode: true
   qos: "high"
   time: "1:59:00" # Fairly low because we are only interested in the best configurations, so we just let bad ones time out
@@ -39,8 +39,8 @@ fixed_args:
   prompt-template: ["tutorial", "Herschrijf het document tot een duidelijke, stapsgewijze handleiding of instructiegids. Gebruik waar nodig genummerde stappen of opsommingstekens om de duidelijkheid te vergroten. Behoud alle essentiële informatie en zorg ervoor dat de stijl leerzaam en gemakkelijk te volgen is. Lever alleen de handleiding aan, verder niets..\n\nDocument: [[DOCUMENT]]"]
   max-examples: 10000 # To make sure we have at least 2.5x the max-num-seqs
 
-  output-dataset-name: "fineweb-nl-benchmark"
-  output-dir: "/home/bvanroy/jobs/throughput-bench//results"
+  output-dataset-name: "BramVanroy/fineweb-nl-throughput-benchmark"
+  output-dir: "/projects/prjs0986/embedding/synth-data/benchmark-results"
   
   # Make benchmark reproducible
   seed: 42
@@ -65,32 +65,20 @@ fixed_args:
 # max-num-batched-tokens: Total tokens per forward pass (prefill + decode)
 # =============================================================================
 experiments:
-  # --- SMALL (1B-10B) - Should fit on 1-2 GPUs ---
   - name: "tier0-small"
     args:
       model-name-or-path:
-        - "HuggingFaceTB/SmolLM2-1.7B-Instruct"
-        - "google/gemma-4-E2B-it-qat-w4a16-ct"
-        - "google/gemma-4-E4B-it-qat-w4a16-ct"
-        - "ibm-granite/granite-4.1-3b-fp8"
         - "ibm-granite/granite-4.1-8b-fp8"
-        - "Qwen/Qwen3.5-2B"
-        - "Qwen/Qwen3.5-4B"
-        - "Qwen/Qwen3.5-9B"
+        - "RedHatAI/Qwen3.5-9B-FP8-dynamic"
         - "utter-project/EuroLLM-9B-Instruct-2512"
-        - "mistralai/Ministral-3-3B-Instruct-2512"
         - "mistralai/Ministral-3-8B-Instruct-2512"
-      tp: [1, 2]
-      max-num-seqs: [256, 512, 1024, 2048, 4096]
+      max-num-seqs: [256, 512]
       max-num-batched-tokens: [8192, 16384, 32768]
-
-  # --- MEDIUM (10B-100B) - Likely needs multiple GPUs ---
   - name: "tier0-medium"
     args:
       model-name-or-path:
         - "google/gemma-4-12B-it-qat-w4a16-ct"
         - "Qwen/Qwen3.6-35B-A3B-FP8"
-        - "mistralai/Ministral-3-14B-Instruct-2512"
-      tp: [1, 2, 4]
-      max-num-seqs: [256, 512, 1024, 2048, 4096]
+      tp: [1, 2]
+      max-num-seqs: [256, 512]
       max-num-batched-tokens: [8192, 16384, 32768]
