@@ -188,9 +188,8 @@ def main(
     # slurm settings
     name: str = "synth",
     time: str = "1-00:00:00",
-    qos: str = "low",
+    qos: str = "",
     reservation: str | None = None,
-    container_sif: str | None = None,  # Path to Apptainer .sif image; if set, jobs run inside the container
 ) -> None:
     """Typer CLI entrypoint that runs the pipeline with provided options."""
     # Skip HuggingFace setup in benchmark mode
@@ -445,24 +444,24 @@ def main(
     else:
         from datatrove.executor import SlurmPipelineExecutor  # Lazy import to speed up startup time
 
+        # Use shared storage for TMPDIR to ensure temporary files (created on login node) are accessible to compute nodes.
+        # This is critical for Snellius and other systems where /scratch-local is per-node and gets cleaned up per-job.
+        # Datatrove creates temporary files in the main process and submits Slurm jobs that reference them.
+        shared_tmpdir = "/scratch-shared/bvanroy/datatrove-tmp"
+        os.makedirs(shared_tmpdir, exist_ok=True)
+        os.environ["TMPDIR"] = shared_tmpdir
+
         # Isolate Xet cache per Slurm process to avoid cache contention across parallel jobs.
         _xet_cache = (
-            ' && export HF_XET_CACHE="${TMPDIR}/.cache/hf_xet/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${SLURM_PROCID}"'
+            ' && export HF_XET_CACHE="${TMPDIR}/hf_xet/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${SLURM_PROCID}"'
             ' && mkdir -p "$HF_XET_CACHE"'
         )
-        if container_sif is not None:
-            # Run inside Apptainer container: the scripts/ wrapper resolves launch_pickled_pipeline.
-            slurm_env_command = (
-                f"export APPTAINER_SIF={container_sif}"
-                f" && export PATH={SCRIPTS_DIR}:$PATH"
-                f" && export PYTHONPATH={EXAMPLES_INFERENCE_DIR}:$PYTHONPATH"
-                + _xet_cache
-            )
-        else:
-            slurm_env_command = (
-                f"source .venv/bin/activate && export PYTHONPATH={EXAMPLES_INFERENCE_DIR}:$PYTHONPATH"
-                + _xet_cache
-            )
+        slurm_env_command = (
+            f"export TMPDIR={shared_tmpdir}"
+            f" && source /scratch-shared/bvanroy/.venv-datatrove/bin/activate"
+            f" && export PYTHONPATH={EXAMPLES_INFERENCE_DIR}:$PYTHONPATH"
+            + _xet_cache
+        )
 
         sbatch_args = {
             "account": "tnsr72764",
@@ -486,6 +485,7 @@ def main(
             srun_args={"cpu-bind": "none"},
             sbatch_args={**{"requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
             env_command=slurm_env_command,
+            venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
         )
         inference_executor.run()
 
@@ -515,6 +515,7 @@ def main(
                 cpus_per_task=1,
                 sbatch_args={**{"mem-per-cpu": "4G", "requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
                 env_command=slurm_env_command,
+                venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
             )
 
             monitor_executor.run()
@@ -534,6 +535,7 @@ def main(
                 run_on_dependency_fail=False,  # use afterok
                 sbatch_args={**{"mem-per-cpu": "4G"}, **sbatch_args},
                 env_command=slurm_env_command,
+                venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
             )
             datacard_executor.run()
 

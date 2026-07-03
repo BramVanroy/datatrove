@@ -338,17 +338,7 @@ def process_single_file(path: str, root: str) -> dict[str, object]:
         row["comment"] = failure_reason
         return row
 
-    # Local attempt check. Returns None if file cannot be found
     stats_info = parse_stats_json(inference_dir / "stats.json")
-
-    # In SLURM the stats are in inference_dir / "stats" / 0000.json
-    if stats_info is None:
-        slurm_stats_path = inference_dir / "stats"
-        slurm_stats_files = sorted(slurm_stats_path.glob("*.json"))
-        if slurm_stats_files:
-            logger.info(f"Found stats.json in SLURM stats dir: {slurm_stats_files[0]}")
-            stats_info = parse_stats_json(slurm_stats_files[0])
-        
     if stats_info is None:
         row["comment"] = "stats.json not found"
         return row

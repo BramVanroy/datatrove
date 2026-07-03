@@ -226,8 +226,8 @@ def main():
             time="12:00:00",
             partition="gpu_h100",
             job_name="inference",
-            qos="normal",
-            venv_path=".venv/bin/activate",
+            qos="",
+            venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
         )
         inference_executor.run()
 
@@ -242,8 +242,8 @@ def main():
                 time="7-00:00:00",
                 partition="genoa",
                 job_name="monitor",
-                qos="low",
-                venv_path=".venv/bin/activate",
+                qos="",
+                venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
             )
             monitor_executor.run()
             logger.info(f"Monitor job submitted: {monitor_executor.job_id}")
@@ -256,8 +256,8 @@ def main():
             partition="genoa",
             depends=inference_executor,
             job_name="datacard",
-            qos="low",
-            venv_path=".venv/bin/activate",
+            qos="",
+            venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
         )
         datacard_executor.run()
 
