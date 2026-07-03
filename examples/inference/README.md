@@ -9,46 +9,6 @@ uv sync --extra inference
 
 Make sure to login to your HF account with `hf auth login` using a token with write access since the script creates dataset repos and uploads data.
 
-## Container usage (Apptainer / Singularity)
-
-If your Python environment is packaged as an Apptainer image (`.sif` file), SLURM jobs can run entirely inside the container — no virtual environment activation needed.
-
-### How it works
-
-Each SLURM task calls the `launch_pickled_pipeline` entry-point via `srun`. A thin wrapper script at [`examples/inference/scripts/launch_pickled_pipeline`](scripts/launch_pickled_pipeline) intercepts that call and delegates into the container:
-
-```bash
-exec apptainer exec --nv "$APPTAINER_SIF" launch_pickled_pipeline "$@"
-```
-
-When you pass `--container-sif`, the executor's `env_command` sets `APPTAINER_SIF` and prepends the `scripts/` directory to `PATH`, so every `srun` task automatically runs inside the container.
-
-### Using `generate_data.py`
-
-```sh
-python examples/inference/generate_data.py \
-    --input-dataset-name simplescaling/s1K-1.1 \
-    --prompt-column question \
-    --model-name-or-path Qwen/Qwen3-4B-Thinking-2507 \
-    --output-dataset-name s1K-1.1-synthetic \
-    --container-sif /path/to/your_env.sif
-```
-
-### Using the benchmark script
-
-Add `container-sif` to `fixed_args` in your YAML config and it will be forwarded to every experiment automatically:
-
-```yaml
-fixed_args:
-  container-sif: "/path/to/your_env.sif"
-  # ... other args
-```
-
-### Notes
-
-- `--nv` is set automatically to expose NVIDIA GPUs. For AMD GPUs replace it with `--rocm` in the wrapper script.
-- If your output or checkpoint paths fall outside Apptainer's default bind mounts (e.g. `/scratch` or `/gpfs`), add `--bind /scratch,/gpfs` to the `apptainer exec` call in the wrapper script.
-
 ## Custom Rollouts
 
 This README focuses on `generate_data.py`, a ready-to-use script for prompt-based generation. If you need more control over how generations are orchestrated (e.g., chunked documents, multi-step reasoning, process pools for heavy preprocessing), you can write **custom rollout functions**. See [`inference_chunked.py`](inference_chunked.py) for examples of:
