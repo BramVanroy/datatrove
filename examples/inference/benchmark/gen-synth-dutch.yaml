@@ -24,9 +24,9 @@ continue_on_failure: true
 
 # Fixed arguments applied to all runs
 fixed_args:
-  container-sif: "/projects/prjs0986/embedding/synth-data/datatrove-venv.sif"
   benchmark-mode: true
-  qos: "high"
+  # Snellius does not seem to support QOS
+  qos: ""
   time: "1:59:00" # Fairly low because we are only interested in the best configurations, so we just let bad ones time out
 
   model-max-context: 8192 # So we can also test SmolLM2
@@ -71,6 +71,7 @@ experiments:
         - "ibm-granite/granite-4.1-8b-fp8"
         - "RedHatAI/Qwen3.5-9B-FP8-dynamic"
         - "utter-project/EuroLLM-9B-Instruct-2512"
+        - "swiss-ai/Apertus-8B-2509"
         - "mistralai/Ministral-3-8B-Instruct-2512"
       max-num-seqs: [256, 512]
       max-num-batched-tokens: [8192, 16384, 32768]
