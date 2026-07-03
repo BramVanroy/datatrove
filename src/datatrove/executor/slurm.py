@@ -117,7 +117,7 @@ class SlurmPipelineExecutor(PipelineExecutor):
         nodes_per_task: int = 1,
         workers: int = -1,
         job_name: str = "data_processing",
-        qos: str = "normal",
+        qos: str = "",
         env_command: str = None,
         condaenv: str = None,
         venv_path: str = None,
@@ -300,13 +300,17 @@ class SlurmPipelineExecutor(PipelineExecutor):
 
         # create the actual sbatch script
         srun_args_str = " ".join([f"--{k}={v}" for k, v in self.srun_args.items()]) if self.srun_args else ""
+        launch_cmd = (
+            f"{sys.executable} -m datatrove.tools.launch_pickled_pipeline "
+            f"{self.logging_dir.resolve_paths('executor.pik')}"
+        )
         launch_file_contents = self.get_launch_file_contents(
             self.get_sbatch_args(max_array),
             # use "-n 1" for each srun command to enforce that only one task will be launched.
             # Some setting may lead to two tasks, see https://groups.google.com/g/slurm-users/c/L4nCXtZLlTo
-            f"srun {srun_args_str} -l -n {self.nodes_per_task} launch_pickled_pipeline {self.logging_dir.resolve_paths('executor.pik')}"
+            f"srun {srun_args_str} -l -n {self.nodes_per_task} {launch_cmd}"
             if self.with_srun
-            else f"launch_pickled_pipeline {self.logging_dir.resolve_paths('executor.pik')}",
+            else launch_cmd,
         )
         # save it
         with self.logging_dir.open("launch_script.slurm", "w") as launchscript_f:
