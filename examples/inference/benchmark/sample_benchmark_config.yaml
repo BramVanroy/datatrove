@@ -28,6 +28,14 @@ fixed_args:
   qos: "high"
   time: "1:59:00" # Fairly low because we are only interested in the best configurations, so we just let bad ones time out
 
+  # Cluster-specific Slurm settings. Override here or via DATATROVE_SLURM_* env vars.
+  account: "tnsr72764"
+  gpu-partition: "gpu_h100"
+  cpu-partition: "genoa"
+  max-gpus-per-node: 4
+  venv-path: "/scratch-shared/bvanroy/.venv-datatrove/bin/activate"
+  tmpdir: "/scratch-shared/bvanroy/datatrove-tmp"
+
   model-max-context: 8192 # So we can also test SmolLM2
   max-tokens: 4096
 

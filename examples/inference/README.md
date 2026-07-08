@@ -75,6 +75,45 @@ python examples/inference/generate_data.py \
 
 The script will automatically handle chunking, checkpointing, and queue management for you. The `--tasks` flag controls the size of the Slurm array, while `--workers` specifies the number of jobs that can run concurrently.
 
+### SLURM customization
+
+The inference examples expose the main cluster-specific settings directly, and they all follow the same precedence order:
+
+1. Explicit CLI or YAML argument
+2. Matching `DATATROVE_*` environment variable
+3. Built-in example default
+
+The main overrides are:
+
+- `--account` or `DATATROVE_SLURM_ACCOUNT`
+- `--gpu-partition` or `DATATROVE_SLURM_GPU_PARTITION`
+- `--cpu-partition` or `DATATROVE_SLURM_CPU_PARTITION`
+- `--max-gpus-per-node` or `DATATROVE_MAX_GPUS_PER_NODE`
+- `--venv-path` or `DATATROVE_SLURM_VENV_PATH`
+- `--tmpdir` or `DATATROVE_SLURM_TMPDIR`
+
+For benchmark result analysis, `examples/inference/benchmark/analyze_results.py` also supports `--gpus-per-node` or `DATATROVE_GPUS_PER_NODE` so node-day metrics match your cluster layout.
+
+Example:
+
+```sh
+export DATATROVE_SLURM_ACCOUNT=my_project
+export DATATROVE_SLURM_GPU_PARTITION=gpu_a100
+export DATATROVE_SLURM_CPU_PARTITION=cpu
+export DATATROVE_SLURM_VENV_PATH=/shared/envs/datatrove/bin/activate
+export DATATROVE_SLURM_TMPDIR=/shared/scratch/datatrove-tmp
+
+python examples/inference/generate_data.py \
+  --input-dataset-name simplescaling/s1K-1.1 \
+  --input-dataset-split train \
+  --prompt-column question \
+  --model-name-or-path Qwen/Qwen3-4B-Thinking-2507 \
+  --output-dataset-name s1K-1.1-dataforge \
+  --output-dir data \
+  --workers 10 \
+  --tasks 20
+```
+
 ### HF Hub upload reliability
 
 When writing directly to `hf://` output paths at high array concurrency, transient Hub errors can happen (for example `429 Too Many Requests` or `412 Precondition Failed` during concurrent commits). The inference writer retries these transient open/upload failures with exponential backoff.

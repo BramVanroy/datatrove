@@ -27,6 +27,16 @@ python examples/inference/generate_data.py \
     --model-name-or-path Qwen/Qwen3-0.6B \
     --output-dataset-name s1K-1.1-benchmark
 
+# Override cluster-specific Slurm settings explicitly or via DATATROVE_SLURM_* env vars
+python examples/inference/generate_data.py \
+    --input-dataset-name simplescaling/s1K-1.1 \
+    --prompt-column question \
+    --model-name-or-path Qwen/Qwen3-0.6B \
+    --output-dataset-name s1K-1.1-benchmark \
+    --account my_project \
+    --gpu-partition gpu_a100 \
+    --cpu-partition cpu
+
 # Generate synthetic data using a prompt template with [[DOCUMENT]] variable
 python examples/inference/generate_data.py \
     --input-dataset-name Salesforce/wikitext \
@@ -55,6 +65,10 @@ python examples/inference/generate_data.py \
     --pp 2 \
     --optimization-level 0 \
     --max-num-seqs=16
+
+Slurm option precedence for `account`, partitions, `venv_path`, and `tmpdir` is:
+explicit CLI/programmatic argument, then matching `DATATROVE_SLURM_*` environment variable,
+then the built-in example default.
 """
 
 import os
@@ -82,12 +96,26 @@ EXAMPLES_INFERENCE_DIR = str(Path(__file__).parent)
 SCRIPTS_DIR = str(Path(__file__).parent / "scripts")
 sys.path.insert(0, EXAMPLES_INFERENCE_DIR)
 from utils import (  # noqa: E402
+    DEFAULT_SLURM_ACCOUNT,
+    DEFAULT_SLURM_CPU_PARTITION,
+    DEFAULT_SLURM_GPU_PARTITION,
+    DEFAULT_SLURM_TMPDIR,
+    DEFAULT_SLURM_VENV_PATH,
+    ENV_SLURM_ACCOUNT,
+    ENV_SLURM_CPU_PARTITION,
+    ENV_SLURM_GPU_PARTITION,
+    ENV_MAX_GPUS_PER_NODE,
+    ENV_SLURM_TMPDIR,
+    ENV_SLURM_VENV_PATH,
+    MAX_GPUS_PER_NODE,
     build_run_path,
     check_hf_auth,
     ensure_repo_exists,
     normalize_kvc_dtype,
     normalize_quantization,
     normalize_speculative,
+    resolve_int_setting,
+    resolve_string_setting,
     resolve_repo_id,
     validate_config,
 )
@@ -190,6 +218,12 @@ def main(
     time: str = "1-00:00:00",
     qos: str = "",
     reservation: str | None = None,
+    account: str | None = None,
+    gpu_partition: str | None = None,
+    cpu_partition: str | None = None,
+    max_gpus_per_node: int | None = None,
+    venv_path: str | None = None,
+    tmpdir: str | None = None,
 ) -> None:
     """Typer CLI entrypoint that runs the pipeline with provided options."""
     # Skip HuggingFace setup in benchmark mode
@@ -220,6 +254,7 @@ def main(
     prompt_template_name, prompt_template = (
         prompt_template if isinstance(prompt_template, list) else ("default", prompt_template)
     )
+    resolved_max_gpus_per_node = resolve_int_setting(max_gpus_per_node, ENV_MAX_GPUS_PER_NODE, MAX_GPUS_PER_NODE)
 
     gpus_per_node = validate_config(
         tp=tp,
@@ -229,6 +264,7 @@ def main(
         optimization_level=optimization_level,
         config=config,
         prompt_template=prompt_template,
+        max_gpus_per_node=resolved_max_gpus_per_node,
     )
 
     async def simple_rollout(
@@ -444,12 +480,21 @@ def main(
     else:
         from datatrove.executor import SlurmPipelineExecutor  # Lazy import to speed up startup time
 
+        resolved_account = resolve_string_setting(account, ENV_SLURM_ACCOUNT, DEFAULT_SLURM_ACCOUNT)
+        resolved_gpu_partition = resolve_string_setting(
+            gpu_partition, ENV_SLURM_GPU_PARTITION, DEFAULT_SLURM_GPU_PARTITION
+        )
+        resolved_cpu_partition = resolve_string_setting(
+            cpu_partition, ENV_SLURM_CPU_PARTITION, DEFAULT_SLURM_CPU_PARTITION
+        )
+        resolved_venv_path = resolve_string_setting(venv_path, ENV_SLURM_VENV_PATH, DEFAULT_SLURM_VENV_PATH)
+        resolved_tmpdir = resolve_string_setting(tmpdir, ENV_SLURM_TMPDIR, DEFAULT_SLURM_TMPDIR)
+
         # Use shared storage for TMPDIR to ensure temporary files (created on login node) are accessible to compute nodes.
         # This is critical for Snellius and other systems where /scratch-local is per-node and gets cleaned up per-job.
         # Datatrove creates temporary files in the main process and submits Slurm jobs that reference them.
-        shared_tmpdir = "/scratch-shared/bvanroy/datatrove-tmp"
-        os.makedirs(shared_tmpdir, exist_ok=True)
-        os.environ["TMPDIR"] = shared_tmpdir
+        os.makedirs(resolved_tmpdir, exist_ok=True)
+        os.environ["TMPDIR"] = resolved_tmpdir
 
         # Isolate Xet cache per Slurm process to avoid cache contention across parallel jobs.
         _xet_cache = (
@@ -457,14 +502,14 @@ def main(
             ' && mkdir -p "$HF_XET_CACHE"'
         )
         slurm_env_command = (
-            f"export TMPDIR={shared_tmpdir}"
-            f" && source /scratch-shared/bvanroy/.venv-datatrove/bin/activate"
+            f"export TMPDIR={resolved_tmpdir}"
+            f" && source {resolved_venv_path}"
             f" && export PYTHONPATH={EXAMPLES_INFERENCE_DIR}:$PYTHONPATH"
             + _xet_cache
         )
 
         sbatch_args = {
-            "account": "tnsr72764",
+            "account": resolved_account,
         }
 
         inference_executor = SlurmPipelineExecutor(
@@ -473,7 +518,7 @@ def main(
             tasks=tasks,
             workers=workers,
             time=time,
-            partition="gpu_h100",
+            partition=resolved_gpu_partition,
             max_array_launch_parallel=True,
             qos=qos,
             job_name=f"{name}_inference",
@@ -485,7 +530,7 @@ def main(
             srun_args={"cpu-bind": "none"},
             sbatch_args={**{"requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
             env_command=slurm_env_command,
-            venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
+            venv_path=resolved_venv_path,
         )
         inference_executor.run()
 
@@ -509,13 +554,13 @@ def main(
                 tasks=1,
                 workers=1,
                 time="3-00:00:00",  # Long enough to outlast inference
-                partition="genoa",
+                partition=resolved_cpu_partition,
                 qos=qos,
                 job_name=f"{name}_monitor",
                 cpus_per_task=1,
                 sbatch_args={**{"mem-per-cpu": "4G", "requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
                 env_command=slurm_env_command,
-                venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
+                venv_path=resolved_venv_path,
             )
 
             monitor_executor.run()
@@ -527,7 +572,7 @@ def main(
                 tasks=1,
                 workers=1,
                 time="0:10:00",
-                partition="genoa",
+                partition=resolved_cpu_partition,
                 qos=qos,
                 job_name=f"{name}_datacard",
                 cpus_per_task=1,
@@ -535,7 +580,7 @@ def main(
                 run_on_dependency_fail=False,  # use afterok
                 sbatch_args={**{"mem-per-cpu": "4G"}, **sbatch_args},
                 env_command=slurm_env_command,
-                venv_path="/scratch-shared/bvanroy/.venv-datatrove/bin/activate",
+                venv_path=resolved_venv_path,
             )
             datacard_executor.run()
 

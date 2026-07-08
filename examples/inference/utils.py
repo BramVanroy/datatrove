@@ -1,5 +1,6 @@
 """Utility functions for the vLLM inference/benchmark scripts."""
 
+import os
 import json
 import re
 from pathlib import Path
@@ -10,7 +11,20 @@ from transformers import AutoConfig
 from datatrove.utils.logging import logger
 
 
-MAX_GPUS_PER_NODE = 8
+MAX_GPUS_PER_NODE = 4
+
+DEFAULT_SLURM_ACCOUNT = "tnsr72764"
+DEFAULT_SLURM_GPU_PARTITION = "gpu_h100"
+DEFAULT_SLURM_CPU_PARTITION = "genoa,rome"
+DEFAULT_SLURM_VENV_PATH = "/scratch-shared/bvanroy/venv/venv-datatrove/bin/activate"
+DEFAULT_SLURM_TMPDIR = "/scratch-shared/bvanroy/tmp/datatrove-tmp"
+
+ENV_SLURM_ACCOUNT = "DATATROVE_SLURM_ACCOUNT"
+ENV_SLURM_GPU_PARTITION = "DATATROVE_SLURM_GPU_PARTITION"
+ENV_SLURM_CPU_PARTITION = "DATATROVE_SLURM_CPU_PARTITION"
+ENV_SLURM_VENV_PATH = "DATATROVE_SLURM_VENV_PATH"
+ENV_SLURM_TMPDIR = "DATATROVE_SLURM_TMPDIR"
+ENV_MAX_GPUS_PER_NODE = "DATATROVE_MAX_GPUS_PER_NODE"
 
 # Failure pattern definitions: (pattern_string, failure_reason)
 _FAILURE_PATTERNS: list[tuple[str, str]] = [
@@ -27,6 +41,29 @@ _FAILURE_PATTERNS: list[tuple[str, str]] = [
     (r"Server encountered unrecoverable error", "server_fail"),
 ]
 FAILURE_PATTERNS = [(re.compile(p, re.IGNORECASE), reason) for p, reason in _FAILURE_PATTERNS]
+
+
+def resolve_string_setting(value: str | None, env_name: str, default: str) -> str:
+    """Resolve a string setting from explicit value, environment, then default."""
+    if value not in (None, ""):
+        return value
+    env_value = os.environ.get(env_name)
+    if env_value not in (None, ""):
+        return env_value
+    return default
+
+
+def resolve_int_setting(value: int | None, env_name: str, default: int) -> int:
+    """Resolve an integer setting from explicit value, environment, then default."""
+    if value is not None:
+        return value
+    env_value = os.environ.get(env_name)
+    if env_value in (None, ""):
+        return default
+    try:
+        return int(env_value)
+    except ValueError as exc:
+        raise ValueError(f"Environment variable {env_name} must be an integer, got {env_value!r}") from exc
 
 
 def detect_failure_reason(log_path: Path | None, max_bytes: int = 100_000) -> str | None:
@@ -329,6 +366,7 @@ def validate_config(
     optimization_level: int,
     config: AutoConfig,
     prompt_template: str | None = None,
+    max_gpus_per_node: int = MAX_GPUS_PER_NODE,
 ) -> int:
     """
     Validates configuration parameters for inference.
@@ -337,9 +375,12 @@ def validate_config(
     if prompt_template and "[[DOCUMENT]]" not in prompt_template:
         raise ValueError("Prompt template must contain [[DOCUMENT]] variable")
 
-    if tp > MAX_GPUS_PER_NODE:
+    if max_gpus_per_node < 1:
+        raise ValueError(f"max_gpus_per_node must be >= 1, got {max_gpus_per_node}.")
+
+    if tp > max_gpus_per_node:
         logger.warning(
-            f"WARNING: tp ({tp}) is greater than MAX_GPUS_PER_NODE ({MAX_GPUS_PER_NODE}). "
+            f"WARNING: tp ({tp}) is greater than max_gpus_per_node ({max_gpus_per_node}). "
             "This is not optimal for performance since it uses slower inter-GPU communication."
         )
     if tp < 1:
@@ -357,10 +398,10 @@ def validate_config(
 
     total_gpus = tp * pp * dp
 
-    if total_gpus > MAX_GPUS_PER_NODE * nodes_per_task:
+    if total_gpus > max_gpus_per_node * nodes_per_task:
         raise ValueError(
             f"TPxPPxDP ({tp}x{pp}x{dp}={total_gpus}) is too high. Please set tp/pp/dp to use "
-            f"{MAX_GPUS_PER_NODE * nodes_per_task} or fewer GPUs for nodes_per_task={nodes_per_task}."
+            f"{max_gpus_per_node * nodes_per_task} or fewer GPUs for nodes_per_task={nodes_per_task}."
         )
     if total_gpus % nodes_per_task != 0:
         raise ValueError(
@@ -371,9 +412,9 @@ def validate_config(
 
     if gpus_per_node < 1:
         raise ValueError(f"nodes_per_task ({nodes_per_task}) cannot exceed total GPUs (tp*pp*dp={total_gpus}).")
-    if gpus_per_node > MAX_GPUS_PER_NODE:
+    if gpus_per_node > max_gpus_per_node:
         raise ValueError(
-            f"gpus_per_node ({gpus_per_node}) exceeds GPUS_PER_NODE ({MAX_GPUS_PER_NODE}). Increase nodes_per_task "
+            f"gpus_per_node ({gpus_per_node}) exceeds max_gpus_per_node ({max_gpus_per_node}). Increase nodes_per_task "
             f"(currently {nodes_per_task}) or reduce tp/pp (currently tp={tp}, pp={pp})."
         )
 

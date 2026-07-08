@@ -89,6 +89,8 @@ inference = [
   "aiosqlite",
   "mistral-common>=1.11.2,<2",
   "vllm==0.24.0",
+  # Fix Arch import issues by pinning quack
+  "quack-kernels[cu13]>=0.4.1",
   # Default installs 5.8.x, which has issues with gemma4
   "transformers==5.11.0",
   "flashinfer-python==0.6.12",

@@ -41,9 +41,11 @@ from datatrove.utils.logging import logger
 # Import shared utilities
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import detect_failure_reason
+from utils import resolve_int_setting
 
-# Changed for snellius H100 partition
-GPUS_PER_NODE = 4
+
+ENV_GPUS_PER_NODE = "DATATROVE_GPUS_PER_NODE"
+DEFAULT_ANALYSIS_GPUS_PER_NODE = 4
 
 
 @dataclass
@@ -274,12 +276,14 @@ def parse_stats_json(stats_path: Path) -> dict[str, float | int] | None:
     }
 
 
-def compute_days_for_1b_from_per_gpu(output_tps_per_gpu: float | None) -> tuple[float | None, float | None]:
+def compute_days_for_1b_from_per_gpu(
+    output_tps_per_gpu: float | None, gpus_per_node: int
+) -> tuple[float | None, float | None]:
     """Compute GPU-days and node-days to process 1e9 output tokens using per-GPU throughput."""
     if not output_tps_per_gpu or output_tps_per_gpu <= 0:
         return None, None
     gpu_days = 1_000_000_000.0 / output_tps_per_gpu / 86400.0
-    return gpu_days, gpu_days / GPUS_PER_NODE
+    return gpu_days, gpu_days / gpus_per_node
 
 
 def compute_gpus_for_1b_per_hour_from_per_gpu(output_tps_per_gpu: float | None) -> float | None:
@@ -289,7 +293,7 @@ def compute_gpus_for_1b_per_hour_from_per_gpu(output_tps_per_gpu: float | None) 
     return 1_000_000_000.0 / (output_tps_per_gpu * 3600.0)
 
 
-def process_single_file(path: str, root: str) -> dict[str, object]:
+def process_single_file(path: str, root: str, gpus_per_node: int) -> dict[str, object]:
     """Process a single log file and return a row dict with metrics."""
     fields = parse_path_fields(path, root)
 
@@ -381,7 +385,7 @@ def process_single_file(path: str, root: str) -> dict[str, object]:
         row["avg_gpu_kvc_usage"] = server_metrics["avg_gpu_kvc_usage"]
         row["avg_prefix_cache_hit_rate"] = server_metrics["avg_prefix_cache_hit_rate"]
 
-    gpu_days, node_days = compute_days_for_1b_from_per_gpu(row["output_tps_per_gpu"])
+    gpu_days, node_days = compute_days_for_1b_from_per_gpu(row["output_tps_per_gpu"], gpus_per_node)
     row["gpu_days_to_process_1b_tokens"] = gpu_days
     row["node_days_to_process_1b_tokens"] = node_days
     row["gpus_for_1b_tokens_per_hour"] = compute_gpus_for_1b_per_hour_from_per_gpu(row["output_tps_per_gpu"])
@@ -392,13 +396,15 @@ def process_single_file(path: str, root: str) -> dict[str, object]:
     return row
 
 
-def analyze(root: str, n_jobs: int = -1) -> int:
+def analyze(root: str, n_jobs: int = -1, gpus_per_node: int | None = None) -> int:
     """Analyze benchmark results with parallel log processing.
 
     Args:
         root: Root directory containing experiment results.
         n_jobs: Number of parallel jobs (-1 for all CPUs).
+        gpus_per_node: Number of GPUs per node for node-day calculations.
     """
+    resolved_gpus_per_node = resolve_int_setting(gpus_per_node, ENV_GPUS_PER_NODE, DEFAULT_ANALYSIS_GPUS_PER_NODE)
     root_path = Path(root)
     if not root_path.is_dir():
         message = f"Root directory does not exist: {root_path}"
@@ -413,7 +419,7 @@ def analyze(root: str, n_jobs: int = -1) -> int:
 
     # Process files in parallel with progress bar (threading backend for I/O-bound work)
     rows: list[dict[str, object]] = Parallel(n_jobs=n_jobs, prefer="threads")(
-        delayed(process_single_file)(path, root) for path in tqdm(files, desc="Processing logs")
+        delayed(process_single_file)(path, root, resolved_gpus_per_node) for path in tqdm(files, desc="Processing logs")
     )
 
     # Config columns used for deduplication (experiment + all config params)
@@ -802,14 +808,16 @@ def analyze(root: str, n_jobs: int = -1) -> int:
 def main(
     root: str = "examples/inference/benchmark/results",
     n_jobs: int = -1,
+    gpus_per_node: int | None = None,
 ) -> None:
     """Analyze benchmark results.
 
     Args:
         root: Root directory containing experiment results.
         n_jobs: Number of parallel jobs for processing logs (-1 for all CPUs).
+        gpus_per_node: Number of GPUs per node for node-day calculations.
     """
-    analyze(root, n_jobs)
+    analyze(root, n_jobs, gpus_per_node)
 
 
 if __name__ == "__main__":

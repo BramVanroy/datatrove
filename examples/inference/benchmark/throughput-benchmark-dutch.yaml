@@ -1,0 +1,255 @@
+# Comprehensive vLLM throughput benchmark configuration
+#
+# TIERED APPROACH: Run tiers sequentially, use winners from each tier to inform the next.
+#
+# Tiers:
+#   0. Parallelism and Batching (tp, mns, mnbt) - Find optimal parallelism and batch sizes.
+#   1. SpecDec and GMU (speculative-config, gmu) - Lossless speedup and memory utilization.
+#
+# Model size categories:
+#   - Tiny:     <1B params
+#   - Small:    1B-10B params
+#   - Medium:   10B-100B params
+#   - Large:    100B-500B params
+#   - Enormous: >500B params (leaving out for now, potential models to test are: GLM-4.7, DeepSeek-V3.1, Kimi-K2-Instruct)
+#
+# Launch with:
+#   python examples/inference/benchmark/launch_experiments.py --config examples/inference/benchmark/sample_benchmark_config.yaml
+#
+# Dry run (no submission):
+#   python examples/inference/benchmark/launch_experiments.py --config examples/inference/benchmark/sample_benchmark_config.yaml --dry-run
+
+script: "examples/inference/generate_data.py"
+continue_on_failure: true
+
+# Fixed arguments applied to all runs
+fixed_args:
+  benchmark-mode: true
+  # Snellius does not seem to support QOS
+  qos: ""
+  time: "2:59:00" # Fairly low because we are only interested in the best configurations, so we just let bad ones time out
+
+  model-max-context: 8192 # So we can also test SmolLM2
+  max-tokens: 4096
+
+  input-dataset-name: "epfml/FineWeb2-HQ"
+  input-dataset-config: "nld_Latn"
+  input-dataset-split: "train"
+  prompt-column: "text"
+  prompt-template: ["tutorial", "Herschrijf het document tot een duidelijke, stapsgewijze handleiding of instructiegids. Gebruik waar nodig genummerde stappen of opsommingstekens om de duidelijkheid te vergroten. Behoud alle essentiële informatie en zorg ervoor dat de stijl leerzaam en gemakkelijk te volgen is. Lever alleen de handleiding aan, verder niets..\n\nDocument: [[DOCUMENT]]"]
+  max-examples: 10000 # To make sure we have at least 2.5x the max-num-seqs
+
+  output-dataset-name: "BramVanroy/fineweb-nl-throughput-benchmark"
+  output-dir: "/projects/prjs0986/embedding/synth-data/benchmark-results"
+  
+  # Make benchmark reproducible
+  seed: 42
+  temperature: 0.0
+
+  # Ensure pipeline is not bottlenecked by concurrency limits
+  max-concurrent-generations: 5000
+  max-concurrent-documents: 5000
+
+  workers: 1
+  tasks: 1
+  trust-remote-code: true
+
+# =============================================================================
+# TIER 0: PARALLELISM AND BATCHING (tp, mns, mnbt)
+# =============================================================================
+# Goal: Find optimal parallelism and batch size configuration.
+# This is the HIGHEST IMPACT lever - how many sequences can we push through?
+#
+# tp: Tensor parallelism - split model across GPUs
+# max-num-seqs: How many sequences can be batched together
+# max-num-batched-tokens: Total tokens per forward pass (prefill + decode)
+# =============================================================================
+experiments:
+  - name: "tier0-small"
+    args:
+      model-name-or-path:
+        - "google/gemma-4-E4B-it-qat-w4a16-ct"
+        - "Qwen/Qwen3.5-4B"
+        - "ibm-granite/granite-4.1-3b-fp8"
+        - "mistralai/Ministral-3-3B-Instruct-2512"
+        - "ibm-granite/granite-4.1-8b-fp8"
+        - "Qwen/Qwen3.5-9B"
+        - "utter-project/EuroLLM-9B-Instruct-2512"
+        - "swiss-ai/Apertus-8B-Instruct-2509"
+        - "mistralai/Ministral-3-8B-Instruct-2512"
+      max-num-seqs: [256, 512, 1024]
+      max-num-batched-tokens: [8192, 16384, 32768]
+  - name: "tier0-medium"
+    args:
+      model-name-or-path:
+        - "google/gemma-4-12B-it-qat-w4a16-ct"
+        - "google/gemma-4-26B-A4B-it"
+        - "Qwen/Qwen3.6-35B-A3B-FP8"
+      tp: [1, 2]
+      max-num-seqs: [256, 512]
+      max-num-batched-tokens: [8192, 16384, 32768]
+# =============================================================================
+# TIER 1: SPECDEC AND GMU (speculative-config, gmu)
+# =============================================================================
+# Goal: Achieve LOSSLESS speedup through speculative decoding and memory tuning.
+# Especially beneficial for large models where decode is memory-bound.
+#
+# speculative-config: Speculative decoding configuration
+#   - ngram: Uses prompt n-grams to speculate tokens (good for extraction/summarization)
+#   - suffix: Uses suffix matching from input (good when output resembles input)
+# gpu-memory-utilization: Fraction of GPU memory to use (higher = larger KV cache)
+#
+# Uncomment after Tier 0 completes. Use optimal config from previous tier.
+# =============================================================================
+  # --- SMALL (1B-10B) ---
+  # gemma-4-E4B-it-qat-w4a16-ct: mns=1024
+  - name: "tier1-small"
+    args:
+      model-name-or-path: "google/gemma-4-E4B-it-qat-w4a16-ct"
+      tp: 1
+      max-num-seqs: 1024
+      max-num-batched-tokens: 8192
+      gpu-memory-utilization: 0.9
+      speculative-config:
+        - None
+        - '{"model": "google/gemma-4-E4B-it-assistant", "num_speculative_tokens": 4}'
+
+  # Qwen3.5-4B-FP8-dynamic: mnbt=16384
+  # - name: "tier1-small"
+  #   args:
+  #     model-name-or-path: "Qwen/Qwen3.5-4B"
+  #     tp: 1
+  #     max-num-seqs: 
+  #     max-num-batched-tokens: 
+  #     gpu-memory-utilization: 0.9
+  #     speculative-config:
+  #       - None
+  #       - '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'
+
+  # granite-4.1-3b-fp8: mns=1024, mnbt=16384
+  - name: "tier1-small"
+    args:
+      model-name-or-path: "ibm-granite/granite-4.1-3b-fp8"
+      tp: 1
+      max-num-seqs: 1024
+      max-num-batched-tokens: 16384
+      gpu-memory-utilization: 0.9
+      speculative-config: 
+        - None
+        - '{"method": "ngram", "num_speculative_tokens": 6}'
+        - '{"method": "suffix", "num_speculative_tokens": 32}'
+
+  # Ministral-3-3B-Instruct-2512: mns=512
+  - name: "tier1-small"
+    args:
+      model-name-or-path: "mistralai/Ministral-3-3B-Instruct-2512"
+      tp: 1
+      max-num-seqs: 512
+      max-num-batched-tokens: 8192
+      gpu-memory-utilization: 0.9
+      speculative-config: 
+        - None
+        - '{"method": "ngram", "num_speculative_tokens": 6}'
+        - '{"method": "suffix", "num_speculative_tokens": 32}'
+
+  # granite-4.1-8b-fp8: mns=512
+  - name: "tier1-small"
+    args:
+      model-name-or-path: "ibm-granite/granite-4.1-8b-fp8"
+      tp: 1
+      max-num-seqs: 512
+      max-num-batched-tokens: 8192
+      gpu-memory-utilization: 0.9
+      speculative-config: 
+        - None
+        - '{"method": "ngram", "num_speculative_tokens": 6}'
+        - '{"method": "suffix", "num_speculative_tokens": 32}'
+
+  # Qwen3.5-9B-FP8-dynamic: mns=512, mnbt=32768
+  # - name: "tier1-small"
+  #   args:
+  #     model-name-or-path: "Qwen/Qwen3.5-9B"
+  #     tp: 1
+  #     max-num-seqs: 12
+  #     max-num-batched-tokens: 
+  #     gpu-memory-utilization: 0.9
+  #     speculative-config:
+  #       - None
+  #       - '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'
+
+  # EuroLLM-9B-Instruct-2512: mnbt=32768
+  - name: "tier1-small"
+    args:
+      model-name-or-path: "utter-project/EuroLLM-9B-Instruct-2512"
+      tp: 1
+      max-num-seqs: 256
+      max-num-batched-tokens: 32768
+      gpu-memory-utilization: 0.9
+      speculative-config: 
+        - None
+        - '{"method": "ngram", "num_speculative_tokens": 6}'
+        - '{"method": "suffix", "num_speculative_tokens": 32}'
+
+  # Apertus-8B-Instruct-2509: mns=512, mnbt=16384
+  - name: "tier1-small"
+    args:
+      model-name-or-path: "swiss-ai/Apertus-8B-Instruct-2509"
+      tp: 1
+      max-num-seqs: 512
+      max-num-batched-tokens: 16384
+      gpu-memory-utilization: 0.9
+      speculative-config: 
+        - None
+        - '{"method": "ngram", "num_speculative_tokens": 6}'
+        - '{"method": "suffix", "num_speculative_tokens": 32}'
+
+  # Ministral-3-8B-Instruct-2512: mnbt=16384
+  - name: "tier1-small"
+    args:
+      model-name-or-path: "mistralai/Ministral-3-8B-Instruct-2512"
+      tp: 1
+      max-num-seqs: 256
+      max-num-batched-tokens: 16384
+      gpu-memory-utilization: 0.9
+      speculative-config: 
+        - None
+        - '{"method": "ngram", "num_speculative_tokens": 6}'
+        - '{"method": "suffix", "num_speculative_tokens": 32}'
+
+  # --- MEDIUM (10B-100B) ---
+  # gemma-4-12B-it-qat-w4a16-ct: baseline is optimal (tp=1, mns=256, mnbt=8192)
+  - name: "tier1-medium"
+    args:
+      model-name-or-path: "google/gemma-4-12B-it-qat-w4a16-ct"
+      tp: 1
+      max-num-seqs: 256
+      max-num-batched-tokens: 8192
+      gpu-memory-utilization: 0.9
+      speculative-config:
+        - None
+        - '{"model": "google/gemma-4-12B-it-assistant", "num_speculative_tokens": 4}'
+        - '{"model": "google/gemma-4-12B-it-assistant", "num_speculative_tokens": 8}'
+
+  # gemma-4-26B-A4B-it-FP8-Dynamic: mns=512, mnbt=32768
+  # - name: "tier1-medium"
+  #   args:
+  #     model-name-or-path: "google/gemma-4-26B-A4B-it"
+  #     tp: 
+  #     max-num-seqs: 
+  #     max-num-batched-tokens: 
+  #     gpu-memory-utilization: 0.9
+  #     speculative-config:
+  #       - None
+  #       - '{"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 4}'
+
+  # Qwen3.6-35B-A3B-FP8: mns=512, mnbt=16384
+  - name: "tier1-medium"
+    args:
+      model-name-or-path: "Qwen/Qwen3.6-35B-A3B-FP8"
+      tp: 1
+      max-num-seqs: 512
+      max-num-batched-tokens: 16384
+      gpu-memory-utilization: 0.9
+      speculative-config:
+        - None
+        - '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'
