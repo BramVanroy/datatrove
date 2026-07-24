@@ -5,26 +5,30 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --account=tnsr72764
-#SBATCH --partition=genoa,rome
+#SBATCH --partition=genoa
 #SBATCH --cpus-per-task=24
 
+# also loads env vars like SCRATCH_DIR
 source "$HOME/.bashrc"
 
 set -e
 
 load_modules
-set_cache_dirs
 
-export DATATROVE_DIR="/projects/prjs0986/embedding/synth-data/datatrove"
+DATATROVE_DIR="$GPTNLE_ROOT/subtasks/synth-data/datatrove"
 
-export SCRATCH_DIR="/scratch-shared/bvanroy"
+# Ensure that the datatrove venv is set up and activated on scratch
 export VENV_PATH="$SCRATCH_DIR/venv/venv-datatrove"
 export UV_PROJECT_ENVIRONMENT="$VENV_PATH"
+# Datatrove uses tempfiles to move SLURM files around but they
+# may get deleted between jobs for us, so we stabilize the temp dir here
+# to a non-auto delete tmp
+export TMPDIR="$SCRATCH_TMP_DIR/datatrove-tmp"
 
 cd "$DATATROVE_DIR"
 
 if [[ ! -d "$VENV_PATH" ]]; then
-    # Installs in editable mode
+    # Installs in editable mode in UV_PROJECT_ENVIRONMENT
     uv sync --frozen --extra inference,ray,multilingual,processing,io,cli --no-dev -p 3.13
 fi
 
@@ -33,9 +37,8 @@ source "$VENV_PATH/bin/activate"
 export HF_HUB_OFFLINE=1
 
 ARGS=(
-    --root "/projects/prjs0986/embedding/synth-data/benchmark-results"
+    # Set in the benchmark yaml file
+    --root "/home/bvanroy/gpt-nl-e/subtasks/synth-data/datatrove/benchmark-results"
 )
-
-export TMPDIR="/scratch-shared/bvanroy/tmp/datatrove-tmp"
 
 python "$DATATROVE_DIR/examples/inference/benchmark/analyze_results.py" "${ARGS[@]}"
