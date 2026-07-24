@@ -198,6 +198,7 @@ def main(
     quantization: str | None = None,  # "bitsandbytes" for 4-bit quantization
     kv_cache_dtype: str = "auto",  # "auto", "fp8_e4m3", or "fp8_e5m2"
     optimization_level: int = 3,  # Set to 0 for fastest startup, 3 for best throughput
+    thinking: bool | None = None,  # Override chat-template-kwargs enable_thinking for vLLM (True/False); None = model default (Qwen3.x and similar)
     metric_interval: int = 120,
     # Generation parameters
     temperature: float | None = None,
@@ -306,6 +307,11 @@ def main(
             {
                 "messages": messages,
                 "max_tokens": max_tokens,
+                **(
+                    {"chat_template_kwargs": {"enable_thinking": thinking}}
+                    if thinking is not None
+                    else {}
+                ),
                 **({"temperature": temperature} if temperature is not None else {}),
                 **({"top_k": top_k} if top_k is not None else {}),
                 **({"top_p": top_p} if top_p is not None else {}),
@@ -332,7 +338,7 @@ def main(
     normalized_quant = normalize_quantization(quantization)
     normalized_kv_dtype = normalize_kvc_dtype(kv_cache_dtype)
 
-    # Build dynamic output directory: {output_dir}/{prompt}/{model}/{tp-pp-dp}/{mns}/{mnbt}/{gmu}/{bs}/{kvc}/{spec}/{quant}
+    # Build dynamic output directory: {output_dir}/{prompt}/{model}/{tp-pp-dp}/{mns}/{mnbt}/{gmu}/{bs}/{kvc}/{spec}/{quant}[/thinking_{on|off}]
     run_path = build_run_path(
         output_dir=output_dir,
         prompt_template_name=prompt_template_name,
@@ -347,6 +353,7 @@ def main(
         kv_cache_dtype=kv_cache_dtype,
         speculative_config=spec_raw,
         quantization=quantization,
+        thinking=thinking,
     )
     output_path = (
         f"hf://datasets/{full_repo_id}/{prompt_template_name}"

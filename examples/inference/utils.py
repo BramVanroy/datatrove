@@ -15,9 +15,9 @@ MAX_GPUS_PER_NODE = 4
 
 DEFAULT_SLURM_ACCOUNT = "tnsr72764"
 DEFAULT_SLURM_GPU_PARTITION = "gpu_h100"
-DEFAULT_SLURM_CPU_PARTITION = "genoa,rome"
-DEFAULT_SLURM_VENV_PATH = "/scratch-shared/bvanroy/venv/venv-datatrove/bin/activate"
-DEFAULT_SLURM_TMPDIR = "/scratch-shared/bvanroy/tmp/datatrove-tmp"
+DEFAULT_SLURM_CPU_PARTITION = "genoa"
+DEFAULT_SLURM_VENV_PATH = str(Path(os.getenv("SCRATCH_VENV_DIR", "")) / "venv-datatrove/bin/activate")
+DEFAULT_SLURM_TMPDIR = str(Path(os.getenv("SCRATCH_TMP_DIR", "")) / "tmp-datatrove")
 
 ENV_SLURM_ACCOUNT = "DATATROVE_SLURM_ACCOUNT"
 ENV_SLURM_GPU_PARTITION = "DATATROVE_SLURM_GPU_PARTITION"
@@ -443,16 +443,17 @@ def build_run_path(
     kv_cache_dtype: str = "auto",
     speculative_config: str | None = None,
     quantization: str | None = None,
+    thinking: bool | None = None,
 ) -> Path:
     """Build the canonical run path for experiment outputs.
 
-    Path structure: {output_dir}/{prompt}/{model}/tp{TP}-pp{PP}-dp{DP}/mns_{N}/mnbt_{M}/gmu_{P}/bs_{B}/kvc_{...}/spec_{...}/quant_{...}
+    Path structure: {output_dir}/{prompt}/{model}/tp{TP}-pp{PP}-dp{DP}/mns_{N}/mnbt_{M}/gmu_{P}/bs_{B}/kvc_{...}/spec_{...}/quant_{...}[/thinking_{on|off}]
     """
     kv_norm = normalize_kvc_dtype(kv_cache_dtype)
     spec_norm = normalize_speculative(speculative_config) if speculative_config else None
     quant_norm = normalize_quantization(quantization) if quantization else None
 
-    return (
+    path = (
         Path(output_dir)
         / prompt_template_name
         / model_name_safe(model_name_or_path)
@@ -465,3 +466,6 @@ def build_run_path(
         / encode_spec_segment_for_log_dir(spec_norm)
         / encode_quant_segment_for_log_dir(quant_norm)
     )
+    if thinking is not None:
+        path = path / f"thinking_{'on' if thinking else 'off'}"
+    return path
