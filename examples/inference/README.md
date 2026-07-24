@@ -98,7 +98,7 @@ Example:
 
 ```sh
 export DATATROVE_SLURM_ACCOUNT=my_project
-export DATATROVE_SLURM_GPU_PARTITION=gpu_a100
+export DATATROVE_SLURM_GPU_PARTITION=gpu_h100
 export DATATROVE_SLURM_CPU_PARTITION=cpu
 export DATATROVE_SLURM_VENV_PATH=/shared/envs/datatrove/bin/activate
 export DATATROVE_SLURM_TMPDIR=/shared/scratch/datatrove-tmp

@@ -215,6 +215,11 @@ class ExperimentLauncher:
             quant_norm = normalize_quantization(quant_raw)
             parts.append(encode_quant_segment_for_log_dir(quant_norm))
 
+        # 10. Thinking override (default: None = model default)
+        thinking_raw = args.get("thinking")
+        if thinking_raw is not None:
+            parts.append(f"thinking_{'on' if thinking_raw else 'off'}")
+
         return "-".join(parts)
 
     @staticmethod
@@ -316,6 +321,7 @@ class ExperimentLauncher:
             kv_cache_dtype=kwargs.get("kv_cache_dtype") or "auto",
             speculative_config=kwargs.get("speculative_config"),
             quantization=kwargs.get("quantization"),
+            thinking=kwargs.get("thinking"),
         )
 
     def _is_already_completed(self, kwargs: dict[str, Any]) -> bool:
