@@ -1,4 +1,10 @@
 #!/bin/bash
+# Runs a speed benchmark orchestrated by datatrove, based on the yaml config file in
+# datatrove/examples/inference/benchmark/throughput-benchmark-dutch.yaml. The benchmark will
+# run a series of SLURM jobs to benchmark the throughput of various models on the Dutch language.
+# This process is done in two tiers: first one is focused on hyperparameters such as number of sequences,
+# number of tokens, number of GPUs, etc. After settling on those, a second step measures the effect
+# of multi-token prediction (MTP) to get "the best out of the models".
 #SBATCH --job-name=benchmark
 #SBATCH --time=1-00:00:00
 #SBATCH --output=slurm_%x_%j.out
@@ -8,35 +14,40 @@
 #SBATCH --partition=genoa
 #SBATCH --cpus-per-task=2
 
-# also loads env vars like SCRATCH_DIR
-source "$HOME/.bashrc"
-
 set -e
 
-load_modules
+module load 2025
+module load git/2.49.0-GCCcore-14.2.0
+module load GCC/14.2.0
+
+DATATROVE_DIR="$HOME/synthetic-data-pipeline/datatrove"
+
+SCRATCH_DIR="/scratch-shared/$USER"
+SCRATCH_TMP_DIR="$SCRATCH_DIR/tmp"
+SCRATCH_VENV_DIR="$SCRATCH_DIR/venv"
+
+mkdir -p "$SCRATCH_TMP_DIR" "$SCRATCH_VENV_DIR"
 
 # Will ONLY do data/model preloading. After that is finished,
 # set to 0 and re-run
 DO_PRELOAD=1
 
-DATATROVE_DIR="$GPTNLE_ROOT/subtasks/synth-data/datatrove"
-
 # Ensure that the datatrove venv is set up and activated on scratch
-export VENV_PATH="$SCRATCH_DIR/venv/venv-datatrove"
+export VENV_PATH="$SCRATCH_VENV_DIR/datatrove-venv"
 export UV_PROJECT_ENVIRONMENT="$VENV_PATH"
 # Datatrove uses tempfiles to move SLURM files around but they
 # may get deleted between jobs for us, so we stabilize the temp dir here
 # to a non-auto delete tmp
-export TMPDIR="$SCRATCH_TMP_DIR/tmp-datatrove"
+export TMPDIR="$SCRATCH_TMP_DIR/datatrove-tmp"
+
+# Qwen MoE seem to struggle with flashinfer backend, may especially be an issue
+# when TP>1.
+# Note that this is not an official datatrove envvar but an addition I made in vllm_server.py.
+export VLLM_TRITON_GDN_BACKEND=1
 
 cd "$DATATROVE_DIR"
 
-if [[ ! -d "$VENV_PATH" ]]; then
-    # Installs in editable mode in UV_PROJECT_ENVIRONMENT
-    uv sync --frozen --extra inference,ray,multilingual,processing,io,cli --no-dev -p 3.13
-fi
-
-source "$VENV_PATH/bin/activate"
+uv sync --frozen --extra inference,ray,multilingual,processing,io,cli --no-dev -p 3.13
 
 # ! make sure that models and datasets have been pre-downloaded
 # We do it here to prevent race conditions since different proccesses
@@ -64,13 +75,11 @@ if (( DO_PRELOAD == 1 )); then
     echo "=== Starting model downloads ==="
     for MODEL in "${MODELS[@]}"; do
         echo "Downloading model: $MODEL"
-        hf download "$MODEL"
+        uv run hf download "$MODEL"
     done
 
-    # echo "=== Downloading dataset ==="
-    # python -c 'from datasets import load_dataset; load_dataset("epfml/FineWeb2-HQ", "nld_Latn", split="train")'
-    # echo "Preloading completed. Change DO_PRELOAD=0 and re-run."
-    # exit 0
+    echo "=== Downloading dataset ==="
+    uv run python -c 'from datasets import load_dataset; load_dataset("epfml/FineWeb2-HQ", "nld_Latn", split="train")'
 fi
 
 # ! make sure that models and datasets have been pre-downloaded
@@ -85,4 +94,4 @@ ARGS=(
 )
 
 # 'launch experiments' will launch the required GPU SLURM jobs
-python "$DATATROVE_DIR/examples/inference/benchmark/launch_experiments.py" "${ARGS[@]}"
+uv run python "$DATATROVE_DIR/examples/inference/benchmark/launch_experiments.py" "${ARGS[@]}"
