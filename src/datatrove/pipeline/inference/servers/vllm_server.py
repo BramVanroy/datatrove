@@ -87,6 +87,10 @@ class VLLMServer(InferenceServer):
                 else:
                     cmd.append(f"--{k}={v}")
 
+        if os.getenv("VLLM_TRITON_GDN_BACKEND", "0") == "1":
+            cmd.extend(["--gdn-prefill-backend", "triton"])
+            logger.debug("Enabled vLLM GDN prefill backend override: triton (VLLM_TRITON_GDN_BACKEND=1)")
+
         logger.debug(f"Starting VLLM server with command: {' '.join(cmd)}")
         env = os.environ.copy()
         # transformers pulls in TensorFlow by default, which adds tens of seconds of startup time
