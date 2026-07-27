@@ -33,7 +33,7 @@ fixed_args:
   gpu-partition: "gpu_h100"
   cpu-partition: "genoa"
   max-gpus-per-node: 4
-  venv-path: "/scratch-shared/bvanroy/.venv-datatrove/bin/activate"
+  venv-path: "/scratch-shared/bvanroy/.datatrove-venv/bin/activate"
   tmpdir: "/scratch-shared/bvanroy/datatrove-tmp"
 
   model-max-context: 8192 # So we can also test SmolLM2

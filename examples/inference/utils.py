@@ -16,8 +16,8 @@ MAX_GPUS_PER_NODE = 4
 DEFAULT_SLURM_ACCOUNT = "tnsr72764"
 DEFAULT_SLURM_GPU_PARTITION = "gpu_h100"
 DEFAULT_SLURM_CPU_PARTITION = "genoa"
-DEFAULT_SLURM_VENV_PATH = str(Path(os.getenv("SCRATCH_VENV_DIR", "")) / "venv-datatrove/bin/activate")
-DEFAULT_SLURM_TMPDIR = str(Path(os.getenv("SCRATCH_TMP_DIR", "")) / "tmp-datatrove")
+DEFAULT_SLURM_VENV_PATH = str(Path(os.getenv("SCRATCH_VENV_DIR", "")) / "datatrove-venv/bin/activate")
+DEFAULT_SLURM_TMPDIR = str(Path(os.getenv("SCRATCH_TMP_DIR", "")) / "datatrove-tmp")
 
 ENV_SLURM_ACCOUNT = "DATATROVE_SLURM_ACCOUNT"
 ENV_SLURM_GPU_PARTITION = "DATATROVE_SLURM_GPU_PARTITION"
