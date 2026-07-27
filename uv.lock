@@ -1702,7 +1702,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "numpy", marker = "extra == 'inference'", specifier = ">=2.0.0,<2.3" },
     { name = "orjson", marker = "extra == 'io'" },
-    { name = "pandas", marker = "extra == 'inference'" },
+    { name = "pandas", marker = "extra == 'inference'", specifier = ">=2,<3" },
     { name = "pyahocorasick", marker = "extra == 'processing'" },
     { name = "pyarrow", marker = "extra == 'io'" },
     { name = "pyidaungsu-numpy2", marker = "extra == 'multilingual'" },
