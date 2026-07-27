@@ -66,7 +66,7 @@ python examples/inference/generate_data.py \
     --optimization-level 0 \
     --max-num-seqs=16
 
-Slurm option precedence for `account`, partitions, `venv_path`, and `tmpdir` is:
+Slurm option precedence for `account`, partitions, `venv_path` is:
 explicit CLI/programmatic argument, then matching `DATATROVE_SLURM_*` environment variable,
 then the built-in example default.
 """
@@ -99,13 +99,11 @@ from utils import (  # noqa: E402
     DEFAULT_SLURM_ACCOUNT,
     DEFAULT_SLURM_CPU_PARTITION,
     DEFAULT_SLURM_GPU_PARTITION,
-    DEFAULT_SLURM_TMPDIR,
     DEFAULT_SLURM_VENV_PATH,
     ENV_SLURM_ACCOUNT,
     ENV_SLURM_CPU_PARTITION,
     ENV_SLURM_GPU_PARTITION,
     ENV_MAX_GPUS_PER_NODE,
-    ENV_SLURM_TMPDIR,
     ENV_SLURM_VENV_PATH,
     MAX_GPUS_PER_NODE,
     build_run_path,
@@ -224,7 +222,7 @@ def main(
     cpu_partition: str | None = None,
     max_gpus_per_node: int | None = None,
     venv_path: str | None = None,
-    tmpdir: str | None = None,
+    use_scratch_node: bool = False,
 ) -> None:
     """Typer CLI entrypoint that runs the pipeline with provided options."""
     # Skip HuggingFace setup in benchmark mode
@@ -392,7 +390,8 @@ def main(
         "optimization-level": optimization_level,
     }
     # Memory per CPU for slurm allocation (in GB)
-    mem_per_cpu_gb = 22
+    # Changed for snellius, set to 6GB for the A100 nodes which have less CPU RAM
+    mem_per_cpu_gb = 6
     if not local_execution and nodes_per_task > 1:
         # vLLM defaults to the mp backend when TP fits on a single host; but when TP spans
         # multiple nodes we must force the Ray backend so TP can exceed local GPU count.
@@ -495,24 +494,11 @@ def main(
             cpu_partition, ENV_SLURM_CPU_PARTITION, DEFAULT_SLURM_CPU_PARTITION
         )
         resolved_venv_path = resolve_string_setting(venv_path, ENV_SLURM_VENV_PATH, DEFAULT_SLURM_VENV_PATH)
-        resolved_tmpdir = resolve_string_setting(tmpdir, ENV_SLURM_TMPDIR, DEFAULT_SLURM_TMPDIR)
-
-        # Use shared storage for TMPDIR to ensure temporary files (created on login node) are accessible to compute nodes.
-        # This is critical for Snellius and other systems where /scratch-local is per-node and gets cleaned up per-job.
-        # Datatrove creates temporary files in the main process and submits Slurm jobs that reference them.
-        os.makedirs(resolved_tmpdir, exist_ok=True)
-        os.environ["TMPDIR"] = resolved_tmpdir
 
         # Isolate Xet cache per Slurm process to avoid cache contention across parallel jobs.
-        _xet_cache = (
-            ' && export HF_XET_CACHE="${TMPDIR}/hf_xet/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${SLURM_PROCID}"'
-            ' && mkdir -p "$HF_XET_CACHE"'
-        )
         slurm_env_command = (
-            f"export TMPDIR={resolved_tmpdir}"
-            f" && source {resolved_venv_path}"
+            f"source {resolved_venv_path}"
             f" && export PYTHONPATH={EXAMPLES_INFERENCE_DIR}:$PYTHONPATH"
-            + _xet_cache
         )
 
         sbatch_args = {
@@ -538,6 +524,7 @@ def main(
             sbatch_args={**{"requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
             env_command=slurm_env_command,
             venv_path=resolved_venv_path,
+            use_scratch_node=use_scratch_node,
         )
         inference_executor.run()
 
@@ -568,6 +555,7 @@ def main(
                 sbatch_args={**{"mem-per-cpu": "4G", "requeue": ""}, **sbatch_args},  # Requeue to handle long running jobs
                 env_command=slurm_env_command,
                 venv_path=resolved_venv_path,
+                use_scratch_node=use_scratch_node,
             )
 
             monitor_executor.run()
@@ -588,6 +576,7 @@ def main(
                 sbatch_args={**{"mem-per-cpu": "4G"}, **sbatch_args},
                 env_command=slurm_env_command,
                 venv_path=resolved_venv_path,
+                use_scratch_node=use_scratch_node,
             )
             datacard_executor.run()
 

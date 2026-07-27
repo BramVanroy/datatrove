@@ -90,7 +90,6 @@ The main overrides are:
 - `--cpu-partition` or `DATATROVE_SLURM_CPU_PARTITION`
 - `--max-gpus-per-node` or `DATATROVE_MAX_GPUS_PER_NODE`
 - `--venv-path` or `DATATROVE_SLURM_VENV_PATH`
-- `--tmpdir` or `DATATROVE_SLURM_TMPDIR`
 
 For benchmark result analysis, `examples/inference/benchmark/analyze_results.py` also supports `--gpus-per-node` or `DATATROVE_GPUS_PER_NODE` so node-day metrics match your cluster layout.
 
@@ -101,7 +100,6 @@ export DATATROVE_SLURM_ACCOUNT=my_project
 export DATATROVE_SLURM_GPU_PARTITION=gpu_h100
 export DATATROVE_SLURM_CPU_PARTITION=cpu
 export DATATROVE_SLURM_VENV_PATH=/shared/envs/datatrove/bin/activate
-export DATATROVE_SLURM_TMPDIR=/shared/scratch/datatrove-tmp
 
 python examples/inference/generate_data.py \
   --input-dataset-name simplescaling/s1K-1.1 \

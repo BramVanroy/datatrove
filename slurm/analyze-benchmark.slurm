@@ -29,10 +29,6 @@ mkdir -p "$SCRATCH_TMP_DIR" "$SCRATCH_VENV_DIR"
 # Ensure that the datatrove venv is set up and activated on scratch
 export VENV_PATH="$SCRATCH_VENV_DIR/datatrove-venv"
 export UV_PROJECT_ENVIRONMENT="$VENV_PATH"
-# Datatrove uses tempfiles to move SLURM files around but they
-# may get deleted between jobs for us, so we stabilize the temp dir here
-# to a non-auto delete tmp
-export TMPDIR="$SCRATCH_TMP_DIR/datatrove-tmp"
 
 cd "$DATATROVE_DIR"
 

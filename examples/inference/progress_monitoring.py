@@ -49,12 +49,10 @@ from utils import (  # noqa: E402
     DEFAULT_SLURM_ACCOUNT,
     DEFAULT_SLURM_CPU_PARTITION,
     DEFAULT_SLURM_GPU_PARTITION,
-    DEFAULT_SLURM_TMPDIR,
     DEFAULT_SLURM_VENV_PATH,
     ENV_SLURM_ACCOUNT,
     ENV_SLURM_CPU_PARTITION,
     ENV_SLURM_GPU_PARTITION,
-    ENV_SLURM_TMPDIR,
     ENV_SLURM_VENV_PATH,
     check_hf_auth,
     ensure_repo_exists,
@@ -132,12 +130,6 @@ def main():
         type=str,
         default=None,
         help=f"Virtualenv activate path for Slurm jobs (env: {ENV_SLURM_VENV_PATH})",
-    )
-    parser.add_argument(
-        "--tmpdir",
-        type=str,
-        default=None,
-        help=f"Shared TMPDIR for Slurm jobs (env: {ENV_SLURM_TMPDIR})",
     )
     args = parser.parse_args()
 
@@ -243,19 +235,10 @@ def main():
             args.cpu_partition, ENV_SLURM_CPU_PARTITION, DEFAULT_SLURM_CPU_PARTITION
         )
         resolved_venv_path = resolve_string_setting(args.venv_path, ENV_SLURM_VENV_PATH, DEFAULT_SLURM_VENV_PATH)
-        resolved_tmpdir = resolve_string_setting(args.tmpdir, ENV_SLURM_TMPDIR, DEFAULT_SLURM_TMPDIR)
 
-        os.makedirs(resolved_tmpdir, exist_ok=True)
-        os.environ["TMPDIR"] = resolved_tmpdir
-        xet_cache = (
-            ' && export HF_XET_CACHE="${TMPDIR}/hf_xet/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${SLURM_PROCID}"'
-            ' && mkdir -p "$HF_XET_CACHE"'
-        )
         slurm_env_command = (
-            f"export TMPDIR={resolved_tmpdir}"
-            f" && source {resolved_venv_path}"
+            f"source {resolved_venv_path}"
             f" && export PYTHONPATH={EXAMPLES_INFERENCE_DIR}:$PYTHONPATH"
-            + xet_cache
         )
         sbatch_args = {"account": resolved_account}
 

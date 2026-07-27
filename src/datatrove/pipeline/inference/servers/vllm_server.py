@@ -66,7 +66,7 @@ class VLLMServer(InferenceServer):
             "--max-model-len",
             str(self.config.model_max_context),
             "--trust-remote-code",
-            "--disable-uvicorn-access-log",
+            "--language-model-only"
         ]
 
         model_kwargs = self.config.model_kwargs.copy() if self.config.model_kwargs else {}

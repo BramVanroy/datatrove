@@ -112,7 +112,7 @@ class SlurmPipelineExecutor(PipelineExecutor):
         time: str,
         partition: str,
         cpus_per_task: int = 1,
-        mem_per_cpu_gb: int = 2,
+        mem_per_cpu_gb: int | None = None,
         gpus_per_task: int = 0,
         nodes_per_task: int = 1,
         workers: int = -1,
@@ -141,6 +141,7 @@ class SlurmPipelineExecutor(PipelineExecutor):
         srun_args: dict = None,
         tasks_per_job: int = 1,
         with_srun: bool = True,
+        use_scratch_node: bool = False,
     ):
         super().__init__(pipeline, logging_dir, skip_completed, randomize_start_duration)
         self.tasks = tasks
@@ -160,6 +161,7 @@ class SlurmPipelineExecutor(PipelineExecutor):
         self.depends = depends
         self.depends_job_id = depends_job_id
         self.job_id_position = job_id_position
+        self.use_scratch_node = use_scratch_node
 
         if job_id_retriever is None:
             job_id_retriever = partial(default_job_id_retriever, job_id_position=job_id_position)
@@ -237,7 +239,7 @@ class SlurmPipelineExecutor(PipelineExecutor):
                 {
                     **self.get_sbatch_args(),
                     "cpus-per-task": 1,
-                    "mem-per-cpu": "1G",
+                    # "mem-per-cpu": "1G",
                     "dependency": f"afterok:{self.job_id}",
                 },
                 f"merge_stats {self.logging_dir.resolve_paths('stats')} "
@@ -347,7 +349,6 @@ class SlurmPipelineExecutor(PipelineExecutor):
         slurm_logfile = os.path.join(self.slurm_logs_folder, "%A_%a.out")
         sbatch_args = {
             "cpus-per-task": self.cpus_per_task,
-            "mem-per-cpu": f"{self.mem_per_cpu_gb}G",
             "nodes": self.nodes_per_task,
             "partition": self.partition,
             "job-name": self.job_name,
@@ -358,6 +359,15 @@ class SlurmPipelineExecutor(PipelineExecutor):
             **({"mail-type": self.mail_type, "mail-user": self.mail_user} if self.mail_user else {}),
             **self._sbatch_args,
         }
+
+        if self.mem_per_cpu_gb is not None:
+            sbatch_args["mem-per-cpu"] = f"{self.mem_per_cpu_gb}G"
+
+        # Snellius-specific, see
+        # https://servicedesk.surf.nl/wiki/spaces/WIKI/pages/85295828/Snellius+filesystems
+        if self.use_scratch_node:            
+            sbatch_args["constraint"] = "scratch-node"
+
         if self.requeue:
             sbatch_args["requeue"] = ""
         if self.qos:
@@ -391,7 +401,7 @@ class SlurmPipelineExecutor(PipelineExecutor):
             )
         )
 
-        return (
+        cmd = (
             "#!/bin/bash\n"
             + args
             + textwrap.dedent(
@@ -400,10 +410,35 @@ class SlurmPipelineExecutor(PipelineExecutor):
         {env_command}
         set -xe
         export PYTHONUNBUFFERED=TRUE
-        {run_script}
         """
             )
         )
+
+        if self.use_scratch_node:            
+            # Snellius-specific, see
+            # https://servicedesk.surf.nl/wiki/spaces/WIKI/pages/85295828/Snellius+filesystems
+            # When this flag is enabled, we will request a node that has a node-local NVMe scratch
+            # and set the most crucial environment variables to point to that scratch. 
+            # This is important for vLLM and other libraries that use caching.
+            cmd += textwrap.dedent(
+                """
+                NODETMPDIR="$TMPDIR/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${SLURM_PROCID}"
+                mkdir -p "$NODETMPDIR"
+
+                echo "Using node-local scratch at $NODETMPDIR"
+                export TORCH_HOME="$NODETMPDIR/torch"
+                export VLLM_CACHE_ROOT="$NODETMPDIR/vllm"
+                export TRITON_HOME="$NODETMPDIR/triton"
+                export TRITON_CACHE_DIR="$NODETMPDIR/triton"
+                export TORCHINDUCTOR_CACHE_DIR="$NODETMPDIR/torchinductor"
+                export FLASHINFER_CACHE_DIR="$NODETMPDIR/flashinfer"
+                export CUDA_CACHE_PATH="$NODETMPDIR/cuda"
+                """
+            )
+
+        cmd += "\n" + run_script.strip()
+
+        return cmd
 
     def get_distributed_env(self, node_rank: int = -1) -> DistributedEnvVars:
         """Get distributed environment variables for SLURM executor."""
